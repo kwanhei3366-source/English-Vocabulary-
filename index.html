@@ -22,6 +22,7 @@
             box-shadow: 0 4px 15px rgba(0,0,0,0.1);
             max-width: 600px;
             width: 100%;
+            position: relative;
         }
         h1 {
             text-align: center;
@@ -51,7 +52,18 @@
         .game-area {
             display: none;
             flex-direction: column;
-            gap: 20px;
+            gap: 15px;
+        }
+        .header-info {
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px;
+            color: #666;
+            font-weight: bold;
+            background: #eee;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 10px;
         }
         .question-box {
             background-color: #f9f9f9;
@@ -66,7 +78,7 @@
             align-items: center;
         }
         .question-box b {
-            color: #d32f2f; /* 突顯加粗字體 */
+            color: #d32f2f;
         }
         input[type="text"] {
             padding: 12px;
@@ -101,6 +113,23 @@
             color: #666;
             text-align: center;
         }
+
+        /* 完成畫面樣式 */
+        .finish-screen {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            padding: 20px 0;
+        }
+        .finish-screen h2 { color: #4CAF50; }
+        .finish-screen p { font-size: 18px; color: #333; }
+        .btn-home {
+            background-color: #2196F3;
+            color: white;
+            width: 100%;
+            margin-top: 20px;
+        }
     </style>
 </head>
 <body>
@@ -116,15 +145,26 @@
 
     <!-- 遊戲區域 -->
     <div id="game" class="game-area">
+        <div class="header-info">
+            <span id="progressText">進度: 0 / 0</span>
+            <span id="partTitle"></span>
+        </div>
         <div id="question" class="question-box"></div>
         <input type="text" id="answerInput" placeholder="請輸入答案..." autocomplete="off">
         <div class="action-buttons">
             <button class="btn-submit" id="submitBtn" onclick="checkAnswer()">檢查答案</button>
-            <button class="btn-next" id="nextBtn" onclick="nextQuestion()">下一題</button>
+            <button class="btn-next" id="nextBtn" onclick="loadNextQuestion()">下一題</button>
         </div>
         <div id="feedback" class="feedback"></div>
         <div class="hint" id="hint"></div>
-        <button class="btn-quit" onclick="quitGame()">返回選單</button>
+        <button class="btn-quit" onclick="quitGame()">放棄並返回選單</button>
+    </div>
+
+    <!-- 完成區域 -->
+    <div id="finishScreen" class="finish-screen">
+        <h2>🎉 恭喜完成！</h2>
+        <p id="finishMessage">你已經完成所有題目。</p>
+        <button class="btn-home" onclick="quitGame()">返回主頁</button>
     </div>
 </div>
 
@@ -167,7 +207,7 @@
         { en: "power", zh: "權力" }
     ];
 
-    // Part 2 資料 (35-68)，已保留圖片中的加粗字體
+    // Part 2 資料 (35-68)
     const part2Data = [
         { en: "profanity", def: "rude or offensive words, bad language" },
         { en: "sexism", def: "<b>gender bias</b> and unfairness, discrimination" },
@@ -206,38 +246,75 @@
     ];
 
     let currentPart = 0;
+    let currentQuestions = []; // 存放洗牌後的當前關卡題目
+    let currentIndex = 0;      // 當前題目進度
     let currentQuestion = null;
-    let questionType = ""; // 'zh-en', 'en-zh', or 'def-en'
+    let questionType = ""; 
     
     const menuDiv = document.getElementById('menu');
     const gameDiv = document.getElementById('game');
+    const finishScreen = document.getElementById('finishScreen');
     const questionDiv = document.getElementById('question');
     const inputField = document.getElementById('answerInput');
     const submitBtn = document.getElementById('submitBtn');
     const nextBtn = document.getElementById('nextBtn');
     const feedbackDiv = document.getElementById('feedback');
     const hintDiv = document.getElementById('hint');
+    const progressText = document.getElementById('progressText');
+    const partTitle = document.getElementById('partTitle');
+
+    // 洗牌算法 (Fisher-Yates Shuffle)
+    function shuffleArray(array) {
+        let currentIndex = array.length, randomIndex;
+        while (currentIndex != 0) {
+            randomIndex = Math.floor(Math.random() * currentIndex);
+            currentIndex--;
+            [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
+        }
+        return array;
+    }
 
     function startPart(part) {
         currentPart = part;
+        currentIndex = 0;
+        
+        // 根據選擇的 Part 複製資料並洗牌
+        if (part === 1) {
+            currentQuestions = shuffleArray([...part1Data]);
+            questionDiv.style.borderLeftColor = '#4CAF50';
+            partTitle.textContent = "Part 1: 中英對譯";
+        } else {
+            currentQuestions = shuffleArray([...part2Data]);
+            questionDiv.style.borderLeftColor = '#2196F3';
+            partTitle.textContent = "Part 2: 看定義填英文";
+        }
+
         menuDiv.style.display = 'none';
+        finishScreen.style.display = 'none';
         gameDiv.style.display = 'flex';
-        document.querySelector('.question-box').style.borderLeftColor = part === 1 ? '#4CAF50' : '#2196F3';
-        nextQuestion();
+        
+        loadNextQuestion();
     }
 
     function quitGame() {
         menuDiv.style.display = 'flex';
         gameDiv.style.display = 'none';
+        finishScreen.style.display = 'none';
         feedbackDiv.textContent = "";
         inputField.value = "";
     }
 
-    function getRandomItem(arr) {
-        return arr[Math.floor(Math.random() * arr.length)];
-    }
+    function loadNextQuestion() {
+        // 檢查是否做完一輪
+        if (currentIndex >= currentQuestions.length) {
+            showFinishScreen();
+            return;
+        }
 
-    function nextQuestion() {
+        // 更新進度條
+        progressText.textContent = `進度: ${currentIndex + 1} / ${currentQuestions.length}`;
+        
+        // 重設 UI 狀態
         feedbackDiv.textContent = "";
         feedbackDiv.className = "feedback";
         inputField.value = "";
@@ -245,13 +322,14 @@
         inputField.focus();
         submitBtn.style.display = 'block';
         nextBtn.style.display = 'none';
-        hintDiv.textContent = "";
+        
+        // 獲取當前題目
+        currentQuestion = currentQuestions[currentIndex];
 
         if (currentPart === 1) {
-            currentQuestion = getRandomItem(part1Data);
-            // 80% 中 -> 英, 20% 英 -> 中
-            const rand = Math.random();
-            if (rand < 0.8) {
+            // Part 1: 80% 中 -> 英, 20% 英 -> 中
+            const isZhToEn = Math.random() < 0.8;
+            if (isZhToEn) {
                 questionType = 'zh-en';
                 questionDiv.textContent = currentQuestion.zh;
                 hintDiv.textContent = "請輸入英文單字";
@@ -261,9 +339,9 @@
                 hintDiv.textContent = "請輸入中文解釋";
             }
         } else {
-            currentQuestion = getRandomItem(part2Data);
+            // Part 2: 永遠是 Definition -> 英文
             questionType = 'def-en';
-            questionDiv.innerHTML = currentQuestion.def; // 使用 innerHTML 以顯示 <b> 標籤
+            questionDiv.innerHTML = currentQuestion.def; // 使用 innerHTML 以顯示加粗字體
             hintDiv.textContent = "請輸入英文單字";
         }
     }
@@ -277,11 +355,10 @@
 
         if (questionType === 'zh-en') {
             correctAnswer = currentQuestion.en;
-            // 允許一些微小容錯，例如空格差異
             isCorrect = userAnswer === correctAnswer.toLowerCase();
         } else if (questionType === 'en-zh') {
             correctAnswer = currentQuestion.zh;
-            // 中文檢查，移除空格和標點符號進行比對
+            // 中文忽略空格和標點符號比對
             const cleanUser = userAnswer.replace(/[\s,;\/]/g, '');
             const cleanCorrect = correctAnswer.replace(/[\s,;\/]/g, '');
             isCorrect = cleanUser === cleanCorrect;
@@ -293,30 +370,34 @@
         if (isCorrect) {
             feedbackDiv.textContent = "✅ 正確！";
             feedbackDiv.className = "feedback correct";
-            inputField.disabled = true;
-            showNextBtn();
         } else {
             feedbackDiv.innerHTML = `❌ 錯誤。正確答案是：<strong>${correctAnswer}</strong>`;
             feedbackDiv.className = "feedback incorrect";
-            // 錯了不立刻給下一題，讓玩家看清楚答案，再點擊下一題
-            showNextBtn();
         }
-    }
 
-    function showNextBtn() {
+        // 無論對錯，顯示下一題按鈕，並將當前題數 +1
+        inputField.disabled = true;
         submitBtn.style.display = 'none';
         nextBtn.style.display = 'block';
         nextBtn.focus();
+        currentIndex++; 
     }
 
-    // 讓用戶可以按 Enter 鍵提交或進入下一題
+    function showFinishScreen() {
+        gameDiv.style.display = 'none';
+        finishScreen.style.display = 'flex';
+        document.getElementById('finishMessage').textContent = 
+            `你已經完成了 Part ${currentPart} 的所有 ${currentQuestions.length} 條題目！`;
+    }
+
+    // 支援 Enter 鍵
     inputField.addEventListener("keypress", function(event) {
         if (event.key === "Enter") {
             event.preventDefault();
             if (submitBtn.style.display !== 'none') {
                 checkAnswer();
             } else {
-                nextQuestion();
+                loadNextQuestion();
             }
         }
     });
